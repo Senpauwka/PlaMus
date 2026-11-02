@@ -1,1 +1,150 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0b10">
+  <title>PlaMus — Your Music Space</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <header class="topbar">
+    <a class="logo" href="#">Pla<span>Mus</span></a>
+    <div class="profile" id="profile">YOUR SPACE</div>
+  </header>
+
+  <main>
+    <section class="welcome">
+      <p class="eyebrow">YOUR PERSONAL MUSIC SPACE</p>
+      <h1>Music that<br><span>feels like you.</span></h1>
+      <p class="subtitle">Твоя музыка. Твой стиль. Твоё пространство.</p>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-page="player">Плеер</button>
+      <button class="tab" data-page="library">Медиатека</button>
+      <button class="tab" data-page="studio">Студия</button>
+    </nav>
+
+    <section class="page active" id="player">
+      <div class="player-card">
+        <div class="cover" id="cover">
+          <span class="cover-symbol">♫</span>
+          <span class="cover-label">NOW PLAYING</span>
+        </div>
+
+        <div class="track-info">
+          <div>
+            <p class="eyebrow">NOW PLAYING</p>
+            <h2 id="track-title">Выбери свой трек</h2>
+            <p id="track-artist">PlaMus Player</p>
+          </div>
+          <button class="icon-button" id="pick-track" aria-label="Добавить музыку">＋</button>
+        </div>
+
+        <audio id="audio" preload="metadata"></audio>
+
+        <div class="progress-wrap">
+          <input type="range" id="progress" min="0" max="100" value="0">
+          <div class="time-row">
+            <span id="current-time">0:00</span>
+            <span id="duration">0:00</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="icon-button" id="shuffle" aria-label="Перемешать">⤨</button>
+          <button class="icon-button" id="prev" aria-label="Предыдущий трек">◀</button>
+          <button class="play-button" id="play" aria-label="Воспроизвести">▶</button>
+          <button class="icon-button" id="next" aria-label="Следующий трек">▶</button>
+          <button class="icon-button" id="repeat" aria-label="Повтор">↻</button>
+        </div>
+
+        <div class="volume-row">
+          <span>−</span>
+          <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+          <span>＋</span>
+        </div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">YOUR COLLECTION</p>
+          <h2>Недавно добавленные</h2>
+        </div>
+        <button class="text-button" data-open="library">Все треки ↗</button>
+      </div>
+      <div class="track-list" id="recent-list">
+        <div class="empty-state">Твоя музыкальная история начнётся здесь.</div>
+      </div>
+    </section>
+
+    <section class="page" id="library">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">YOUR MUSIC</p>
+          <h2>Медиатека</h2>
+        </div>
+        <button class="primary-button" id="add-music">＋ Добавить</button>
+      </div>
+      <input class="search" id="search" type="search" placeholder="Найти трек...">
+      <div class="track-list" id="library-list">
+        <div class="empty-state">Здесь будут твои треки.</div>
+      </div>
+    </section>
+
+    <section class="page" id="studio">
+      <p class="eyebrow">MAKE IT YOURS</p>
+      <h2>Твоя студия</h2>
+      <p class="subtitle">Настрой внешний вид плеера под себя.</p>
+
+      <div class="setting-card">
+        <h3>Фон пространства</h3>
+        <div class="background-options">
+          <button class="bg-option bg-dark selected" data-bg="dark">Midnight</button>
+          <button class="bg-option bg-purple" data-bg="purple">Purple haze</button>
+          <button class="bg-option bg-blue" data-bg="blue">Deep ocean</button>
+        </div>
+        <label class="upload-button">
+          Загрузить свой фон
+          <input type="file" id="background-upload" accept="image/*" hidden>
+        </label>
+      </div>
+
+      <div class="setting-card">
+        <h3>Обложка плеера</h3>
+        <label class="upload-button">
+          Выбрать изображение
+          <input type="file" id="cover-upload" accept="image/*" hidden>
+        </label>
+      </div>
+
+      <div class="setting-card">
+        <h3>Внешний вид</h3>
+        <label class="setting-row">Свечение <input type="checkbox" id="glow" checked></label>
+        <label class="setting-row">Стеклянные панели <input type="checkbox" id="glass" checked></label>
+        <label class="setting-row">Показывать подписи <input type="checkbox" id="captions" checked></label>
+      </div>
+
+      <div class="setting-card">
+        <h3>Музыка</h3>
+        <label class="upload-button">
+          Добавить аудиофайлы
+          <input type="file" id="music-upload" accept="audio/*" multiple hidden>
+        </label>
+        <p class="hint">На первом этапе файлы доступны в текущем браузере. Облачное хранение добавим отдельно.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>PLAMUS © 2026 <span>MADE FOR YOUR MOOD</span></footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
  
