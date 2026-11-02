@@ -7,6 +7,7 @@ let tracks = [];
 let currentTrack = -1;
 let shuffled = false;
 let repeated = false;
+let loadToken = 0;
 
 // Telegram
 const tg = window.Telegram?.WebApp;
@@ -23,15 +24,11 @@ if (tg) {
 
 // Navigation
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    openPage(tab.dataset.page);
-  });
+  tab.addEventListener('click', () => openPage(tab.dataset.page));
 });
 
 document.querySelectorAll('[data-open]').forEach(button => {
-  button.addEventListener('click', () => {
-    openPage(button.dataset.open);
-  });
+  button.addEventListener('click', () => openPage(button.dataset.open));
 });
 
 function openPage(page) {
@@ -79,21 +76,81 @@ musicUpload.addEventListener('change', event => {
 });
 
 // Player
-function loadTrack(index) {
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+
+  const min = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+
+  return `${min}:${String(sec).padStart(2, '0')}`;
+}
+
+function updateTime() {
+  const current = Number.isFinite(audio.currentTime)
+    ? audio.currentTime
+    : 0;
+
+  const duration = Number.isFinite(audio.duration)
+    ? audio.duration
+    : 0;
+
+  document.getElementById('current-time').textContent =
+    formatTime(current);
+
+  document.getElementById('duration').textContent =
+    formatTime(duration);
+
+  if (duration > 0) {
+    progress.value = (current / duration) * 100;
+  } else {
+    progress.value = 0;
+  }
+}
+
+function loadTrack(index, autoplay = false) {
   if (!tracks.length) return;
 
   currentTrack = (index + tracks.length) % tracks.length;
-
   const track = tracks[currentTrack];
+  const token = ++loadToken;
 
-  audio.src = track.url;
+  audio.pause();
+  audio.removeAttribute('src');
+
   document.getElementById('track-title').textContent = track.name;
   document.getElementById('track-artist').textContent = track.artist;
 
-  audio.load();
+  progress.value = 0;
+  document.getElementById('current-time').textContent = '0:00';
+  document.getElementById('duration').textContent = '0:00';
+
   playButton.textContent = '▶';
 
+  audio.src = track.url;
+  audio.load();
+
   renderLibrary();
+
+  if (autoplay) {
+    playWhenReady(token);
+  }
+}
+
+async function playWhenReady(token) {
+  try {
+    if (token !== loadToken) return;
+
+    await audio.play();
+
+    if (token !== loadToken) {
+      audio.pause();
+    }
+  } catch (error) {
+    if (token === loadToken) {
+      console.warn('Не удалось воспроизвести трек:', error);
+      playButton.textContent = '▶';
+    }
+  }
 }
 
 function togglePlay() {
@@ -103,11 +160,12 @@ function togglePlay() {
       return;
     }
 
-    loadTrack(0);
+    loadTrack(0, true);
+    return;
   }
 
   if (audio.paused) {
-    audio.play().catch(() => {});
+    playWhenReady(loadToken);
   } else {
     audio.pause();
   }
@@ -123,44 +181,39 @@ audio.addEventListener('pause', () => {
   playButton.textContent = '▶';
 });
 
-audio.addEventListener('timeupdate', () => {
-  if (!audio.duration) return;
+audio.addEventListener('loadedmetadata', updateTime);
+audio.addEventListener('durationchange', updateTime);
+audio.addEventListener('timeupdate', updateTime);
+audio.addEventListener('seeked', updateTime);
 
-  progress.value = (audio.currentTime / audio.duration) * 100;
+audio.addEventListener('emptied', () => {
+  progress.value = 0;
+  document.getElementById('current-time').textContent = '0:00';
+  document.getElementById('duration').textContent = '0:00';
+});
 
-  document.getElementById('current-time').textContent =
-    formatTime(audio.currentTime);
-
-  document.getElementById('duration').textContent =
-    formatTime(audio.duration);
+audio.addEventListener('error', () => {
+  console.error('Ошибка загрузки аудио:', audio.error);
+  playButton.textContent = '▶';
 });
 
 progress.addEventListener('input', () => {
-  if (audio.duration) {
-    audio.currentTime = (progress.value / 100) * audio.duration;
+  if (Number.isFinite(audio.duration) && audio.duration > 0) {
+    audio.currentTime = (Number(progress.value) / 100) * audio.duration;
   }
 });
-
-function formatTime(seconds) {
-  if (!Number.isFinite(seconds)) return '0:00';
-
-  const min = Math.floor(seconds / 60);
-  const sec = Math.floor(seconds % 60);
-
-  return `${min}:${String(sec).padStart(2, '0')}`;
-}
 
 // Next and previous
 document.getElementById('next').addEventListener('click', nextTrack);
 
 document.getElementById('prev').addEventListener('click', () => {
-  if (currentTrack > 0) {
-    loadTrack(currentTrack - 1);
-    audio.play().catch(() => {});
-  } else if (tracks.length) {
-    loadTrack(tracks.length - 1);
-    audio.play().catch(() => {});
-  }
+  if (!tracks.length) return;
+
+  const previous = currentTrack > 0
+    ? currentTrack - 1
+    : tracks.length - 1;
+
+  loadTrack(previous, true);
 });
 
 function nextTrack() {
@@ -174,18 +227,15 @@ function nextTrack() {
     } while (next === currentTrack);
   }
 
-  if (next >= tracks.length) {
-    next = 0;
-  }
+  if (next >= tracks.length) next = 0;
 
-  loadTrack(next);
-  audio.play().catch(() => {});
+  loadTrack(next, true);
 }
 
 audio.addEventListener('ended', () => {
   if (repeated) {
     audio.currentTime = 0;
-    audio.play().catch(() => {});
+    playWhenReady(loadToken);
   } else if (currentTrack < tracks.length - 1 || shuffled) {
     nextTrack();
   } else {
@@ -273,7 +323,7 @@ function escapeHTML(value) {
   })[char]);
 }
 
-document.getElementById('library-list').addEventListener('click', event => {
+function selectTrackFromList(event) {
   const button = event.target.closest('[data-play]');
   const item = event.target.closest('[data-index]');
 
@@ -281,25 +331,14 @@ document.getElementById('library-list').addEventListener('click', event => {
     ? Number(button.dataset.play)
     : item ? Number(item.dataset.index) : -1;
 
-  if (index >= 0) {
-    loadTrack(index);
-    audio.play().catch(() => {});
-  }
-});
+  if (index >= 0) loadTrack(index, true);
+}
 
-document.getElementById('recent-list').addEventListener('click', event => {
-  const button = event.target.closest('[data-play]');
-  const item = event.target.closest('[data-index]');
+document.getElementById('library-list')
+  .addEventListener('click', selectTrackFromList);
 
-  const index = button
-    ? Number(button.dataset.play)
-    : item ? Number(item.dataset.index) : -1;
-
-  if (index >= 0) {
-    loadTrack(index);
-    audio.play().catch(() => {});
-  }
-});
+document.getElementById('recent-list')
+  .addEventListener('click', selectTrackFromList);
 
 document.getElementById('search').addEventListener('input', renderLibrary);
 
@@ -318,7 +357,6 @@ document.querySelectorAll('.bg-option').forEach(button => {
 document.getElementById('background-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
-
     if (!file) return;
 
     document.body.style.backgroundImage =
@@ -332,7 +370,6 @@ document.getElementById('background-upload')
 document.getElementById('cover-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
-
     if (!file) return;
 
     const cover = document.getElementById('cover');
@@ -356,4 +393,3 @@ document.getElementById('captions').addEventListener('change', event => {
 
 // Initial state
 renderLibrary();
- 
