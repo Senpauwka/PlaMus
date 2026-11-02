@@ -52,19 +52,30 @@ document.getElementById('add-music').addEventListener('click', () => {
   musicUpload.click();
 });
 
-musicUpload.addEventListener('change', event => {
+
+musicUpload.addEventListener('change', async event => {
   const files = Array.from(event.target.files || []);
 
-  files.forEach(file => {
-    if (!file.type.startsWith('audio/')) return;
+  await libraryReady;
 
-    tracks.push({
+  for (const file of files) {
+    if (!file.type.startsWith('audio/')) continue;
+
+    const track = {
       name: file.name.replace(/\.[^/.]+$/, ''),
       artist: 'Локальный файл',
       url: URL.createObjectURL(file),
       file
-    });
-  });
+    };
+
+    tracks.push(track);
+
+    try {
+      await saveAudioFile(file, track.name, track.artist);
+    } catch (error) {
+      console.warn('Не удалось сохранить аудиофайл:', error);
+    }
+  }
 
   renderLibrary();
 
@@ -74,6 +85,7 @@ musicUpload.addEventListener('change', event => {
 
   event.target.value = '';
 });
+
 
 // Player
 function formatTime(seconds) {
@@ -599,5 +611,86 @@ document.getElementById('cover-upload')
 
     cover.style.backgroundImage = `url("${url}")`;
     cover.querySelector('.cover-symbol').style.display = 'none';
+  }
+})();
+
+
+// =====================================
+// PlaMus: постоянная музыкальная библиотека
+// =====================================
+
+const AUDIO_DB_NAME = 'plamus-audio-library';
+const AUDIO_STORE = 'tracks';
+
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(AUDIO_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+
+      if (!db.objectStoreNames.contains(AUDIO_STORE)) {
+        db.createObjectStore(AUDIO_STORE, {
+          keyPath: 'id',
+          autoIncrement: true
+        });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveAudioFile(file, name, artist) {
+  const db = await openAudioDB();
+
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction(AUDIO_STORE, 'readwrite');
+
+    transaction.objectStore(AUDIO_STORE).add({
+      name,
+      artist,
+      file
+    });
+
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  db.close();
+}
+
+async function getSavedAudio() {
+  const db = await openAudioDB();
+
+  const result = await new Promise((resolve, reject) => {
+    const transaction = db.transaction(AUDIO_STORE, 'readonly');
+    const request = transaction.objectStore(AUDIO_STORE).getAll();
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  db.close();
+  return result;
+}
+
+const libraryReady = (async () => {
+  try {
+    const savedTracks = await getSavedAudio();
+
+    savedTracks.forEach(saved => {
+      tracks.push({
+        name: saved.name,
+        artist: saved.artist,
+        url: URL.createObjectURL(saved.file),
+        file: saved.file
+      });
+    });
+
+    renderLibrary();
+  } catch (error) {
+    console.error('Не удалось восстановить библиотеку:', error);
   }
 })();
