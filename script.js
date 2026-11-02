@@ -393,3 +393,211 @@ document.getElementById('captions').addEventListener('change', event => {
 
 // Initial state
 renderLibrary();
+
+
+// =====================================
+// PlaMus: сохранение настроек
+// =====================================
+
+const SETTINGS_KEY = 'plamus-settings-v1';
+const DB_NAME = 'plamus-storage';
+const STORE_NAME = 'images';
+
+let settings = {};
+
+try {
+  settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+} catch (error) {
+  settings = {};
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (error) {
+    console.warn('Не удалось сохранить настройки:', error);
+  }
+}
+
+// IndexedDB для изображений
+function openSettingsDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveImage(key, file) {
+  try {
+    const db = await openSettingsDB();
+
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      transaction.objectStore(STORE_NAME).put(file, key);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+
+    db.close();
+  } catch (error) {
+    console.warn('Не удалось сохранить изображение:', error);
+  }
+}
+
+async function loadImage(key) {
+  try {
+    const db = await openSettingsDB();
+
+    const result = await new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const request = transaction.objectStore(STORE_NAME).get(key);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    db.close();
+    return result;
+  } catch (error) {
+    console.warn('Не удалось загрузить изображение:', error);
+    return null;
+  }
+}
+
+async function deleteImage(key) {
+  try {
+    const db = await openSettingsDB();
+
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      transaction.objectStore(STORE_NAME).delete(key);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+
+    db.close();
+  } catch (error) {
+    console.warn('Не удалось удалить изображение:', error);
+  }
+}
+
+// Восстановление обычных настроек
+if (['dark', 'purple', 'blue'].includes(settings.background)) {
+  document.body.dataset.bg = settings.background;
+
+  document.querySelectorAll('.bg-option').forEach(button => {
+    button.classList.toggle(
+      'selected',
+      button.dataset.bg === settings.background
+    );
+  });
+}
+
+if (typeof settings.glow === 'boolean') {
+  document.getElementById('glow').checked = settings.glow;
+  document.body.classList.toggle('no-glow', !settings.glow);
+}
+
+if (typeof settings.glass === 'boolean') {
+  document.getElementById('glass').checked = settings.glass;
+  document.body.classList.toggle('no-glass', !settings.glass);
+}
+
+if (typeof settings.captions === 'boolean') {
+  document.getElementById('captions').checked = settings.captions;
+  document.body.classList.toggle('hide-captions', !settings.captions);
+}
+
+if (typeof settings.volume === 'number') {
+  const volume = Math.max(0, Math.min(1, settings.volume));
+  audio.volume = volume;
+  document.getElementById('volume').value = volume;
+}
+
+// Сохранение переключателей
+document.getElementById('glow').addEventListener('change', event => {
+  settings.glow = event.target.checked;
+  saveSettings();
+});
+
+document.getElementById('glass').addEventListener('change', event => {
+  settings.glass = event.target.checked;
+  saveSettings();
+});
+
+document.getElementById('captions').addEventListener('change', event => {
+  settings.captions = event.target.checked;
+  saveSettings();
+});
+
+document.getElementById('volume').addEventListener('input', event => {
+  settings.volume = Number(event.target.value);
+  saveSettings();
+});
+
+// Сохранение выбранного пресета
+document.querySelectorAll('.bg-option').forEach(button => {
+  button.addEventListener('click', () => {
+    settings.background = button.dataset.bg;
+    saveSettings();
+    deleteImage('background');
+  });
+});
+
+// Сохранение загруженного фона
+document.getElementById('background-upload')
+  .addEventListener('change', event => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    settings.background = 'custom';
+    saveSettings();
+    saveImage('background', file);
+  });
+
+// Сохранение обложки
+document.getElementById('cover-upload')
+  .addEventListener('change', event => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    saveImage('cover', file);
+  });
+
+// Восстановление пользовательских изображений
+(async function restoreImages() {
+  const background = await loadImage('background');
+
+  if (background) {
+    const url = URL.createObjectURL(background);
+
+    document.body.style.backgroundImage =
+      `linear-gradient(rgba(11,11,16,.78), rgba(11,11,16,.9)), url("${url}")`;
+
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundAttachment = 'fixed';
+
+    document.querySelectorAll('.bg-option').forEach(button => {
+      button.classList.remove('selected');
+    });
+  }
+
+  const coverImage = await loadImage('cover');
+
+  if (coverImage) {
+    const url = URL.createObjectURL(coverImage);
+    const cover = document.getElementById('cover');
+
+    cover.style.backgroundImage = `url("${url}")`;
+    cover.querySelector('.cover-symbol').style.display = 'none';
+  }
+})();
