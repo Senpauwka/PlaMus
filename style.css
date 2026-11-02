@@ -584,3 +584,20 @@ body.hide-captions .cover-label {
   }
 }
  
+.track-delete {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 100, 120, .15);
+  border-radius: 10px;
+  background: rgba(255, 100, 120, .07);
+  color: #ff8295;
+  font-size: 21px;
+  line-height: 1;
+  transition: .2s;
+}
+
+.track-delete:hover {
+  background: rgba(255, 100, 120, .2);
+  border-color: rgba(255, 100, 120, .4);
+}
