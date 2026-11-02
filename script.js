@@ -11,11 +11,13 @@ let loadToken = 0;
 
 // Telegram
 const tg = window.Telegram?.WebApp;
+
 if (tg) {
   tg.ready();
   tg.expand();
 
   const user = tg.initDataUnsafe?.user;
+
   if (user) {
     document.getElementById('profile').textContent =
       user.username ? '@' + user.username : user.first_name;
@@ -41,7 +43,114 @@ function openPage(page) {
   });
 }
 
-// File uploads
+// =====================================
+// PlaMus: музыкальная база данных
+// =====================================
+
+const AUDIO_DB_NAME = 'plamus-audio-library';
+const AUDIO_STORE = 'tracks';
+
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(AUDIO_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+
+      if (!db.objectStoreNames.contains(AUDIO_STORE)) {
+        db.createObjectStore(AUDIO_STORE, {
+          keyPath: 'id',
+          autoIncrement: true
+        });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveAudioFile(file, name, artist) {
+  const db = await openAudioDB();
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(AUDIO_STORE, 'readwrite');
+      const request = transaction.objectStore(AUDIO_STORE).add({
+        name,
+        artist,
+        file
+      });
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function getSavedAudio() {
+  const db = await openAudioDB();
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(AUDIO_STORE, 'readonly');
+      const request = transaction.objectStore(AUDIO_STORE).getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function deleteAudioFile(id) {
+  if (id === undefined || id === null) return;
+
+  const db = await openAudioDB();
+
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(AUDIO_STORE, 'readwrite');
+
+      transaction.objectStore(AUDIO_STORE).delete(id);
+
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+// Восстановление библиотеки
+const libraryReady = (async () => {
+  try {
+    const savedTracks = await getSavedAudio();
+
+    savedTracks.forEach(saved => {
+      tracks.push({
+        id: saved.id,
+        name: saved.name,
+        artist: saved.artist,
+        url: URL.createObjectURL(saved.file),
+        file: saved.file
+      });
+    });
+
+    renderLibrary();
+  } catch (error) {
+    console.error('Не удалось восстановить библиотеку:', error);
+  }
+})();
+
+// =====================================
+// Загрузка музыки
+// =====================================
+
 const musicUpload = document.getElementById('music-upload');
 
 document.getElementById('pick-track').addEventListener('click', () => {
@@ -51,7 +160,6 @@ document.getElementById('pick-track').addEventListener('click', () => {
 document.getElementById('add-music').addEventListener('click', () => {
   musicUpload.click();
 });
-
 
 musicUpload.addEventListener('change', async event => {
   const files = Array.from(event.target.files || []);
@@ -71,7 +179,11 @@ musicUpload.addEventListener('change', async event => {
     tracks.push(track);
 
     try {
-      await saveAudioFile(file, track.name, track.artist);
+      track.id = await saveAudioFile(
+        file,
+        track.name,
+        track.artist
+      );
     } catch (error) {
       console.warn('Не удалось сохранить аудиофайл:', error);
     }
@@ -86,8 +198,10 @@ musicUpload.addEventListener('change', async event => {
   event.target.value = '';
 });
 
-
+// =====================================
 // Player
+// =====================================
+
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
 
@@ -112,17 +226,16 @@ function updateTime() {
   document.getElementById('duration').textContent =
     formatTime(duration);
 
-  if (duration > 0) {
-    progress.value = (current / duration) * 100;
-  } else {
-    progress.value = 0;
-  }
+  progress.value = duration > 0
+    ? (current / duration) * 100
+    : 0;
 }
 
 function loadTrack(index, autoplay = false) {
   if (!tracks.length) return;
 
   currentTrack = (index + tracks.length) % tracks.length;
+
   const track = tracks[currentTrack];
   const token = ++loadToken;
 
@@ -211,7 +324,8 @@ audio.addEventListener('error', () => {
 
 progress.addEventListener('input', () => {
   if (Number.isFinite(audio.duration) && audio.duration > 0) {
-    audio.currentTime = (Number(progress.value) / 100) * audio.duration;
+    audio.currentTime =
+      (Number(progress.value) / 100) * audio.duration;
   }
 });
 
@@ -276,7 +390,10 @@ document.getElementById('volume').addEventListener('input', event => {
 
 audio.volume = 0.8;
 
+// =====================================
 // Library
+// =====================================
+
 function renderLibrary() {
   const library = document.getElementById('library-list');
   const recent = document.getElementById('recent-list');
@@ -298,6 +415,10 @@ function renderLibrary() {
           <span>${escapeHTML(track.artist)}</span>
         </div>
         <button class="track-play" data-play="${track.index}">▶</button>
+        <button class="track-delete"
+                data-delete="${track.index}"
+                title="Удалить"
+                aria-label="Удалить ${escapeHTML(track.name)}">×</button>
       </div>
     `).join('');
   }
@@ -316,9 +437,13 @@ function renderLibrary() {
           <div class="track-icon">♫</div>
           <div class="track-details">
             <strong>${escapeHTML(track.name)}</strong>
-            <span>Локальный файл</span>
+            <span>${escapeHTML(track.artist)}</span>
           </div>
           <button class="track-play" data-play="${index}">▶</button>
+          <button class="track-delete"
+                  data-delete="${index}"
+                  title="Удалить"
+                  aria-label="Удалить ${escapeHTML(track.name)}">×</button>
         </div>
       `;
     }).join('');
@@ -336,6 +461,14 @@ function escapeHTML(value) {
 }
 
 function selectTrackFromList(event) {
+  const deleteButton = event.target.closest('[data-delete]');
+
+  if (deleteButton) {
+    event.stopPropagation();
+    deleteTrack(Number(deleteButton.dataset.delete));
+    return;
+  }
+
   const button = event.target.closest('[data-play]');
   const item = event.target.closest('[data-index]');
 
@@ -343,7 +476,9 @@ function selectTrackFromList(event) {
     ? Number(button.dataset.play)
     : item ? Number(item.dataset.index) : -1;
 
-  if (index >= 0) loadTrack(index, true);
+  if (index >= 0) {
+    loadTrack(index, true);
+  }
 }
 
 document.getElementById('library-list')
@@ -353,6 +488,62 @@ document.getElementById('recent-list')
   .addEventListener('click', selectTrackFromList);
 
 document.getElementById('search').addEventListener('input', renderLibrary);
+
+// =====================================
+// PlaMus: удаление треков
+// =====================================
+
+async function deleteTrack(index) {
+  const track = tracks[index];
+  if (!track) return;
+
+  const confirmed = confirm(
+    `Удалить «${track.name}» из медиатеки?`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await deleteAudioFile(track.id);
+
+    const wasCurrent = index === currentTrack;
+    const wasPlaying = wasCurrent && !audio.paused;
+
+    if (wasCurrent) {
+      audio.pause();
+      ++loadToken;
+      audio.removeAttribute('src');
+      audio.load();
+    }
+
+    URL.revokeObjectURL(track.url);
+    tracks.splice(index, 1);
+
+    if (!tracks.length) {
+      currentTrack = -1;
+
+      document.getElementById('track-title').textContent = 'Нет трека';
+      document.getElementById('track-artist').textContent = 'Добавь музыку';
+
+      playButton.textContent = '▶';
+      updateTime();
+    } else if (wasCurrent) {
+      loadTrack(
+        Math.min(index, tracks.length - 1),
+        wasPlaying
+      );
+    } else {
+      if (index < currentTrack) {
+        currentTrack--;
+      }
+
+      renderLibrary();
+    }
+  } catch (error) {
+    console.error('Не удалось удалить трек:', error);
+    alert('Не удалось удалить композицию.');
+  }
+}
 
 // Background presets
 document.querySelectorAll('.bg-option').forEach(button => {
@@ -385,7 +576,9 @@ document.getElementById('cover-upload')
     if (!file) return;
 
     const cover = document.getElementById('cover');
-    cover.style.backgroundImage = `url("${URL.createObjectURL(file)}")`;
+
+    cover.style.backgroundImage =
+      `url("${URL.createObjectURL(file)}")`;
 
     cover.querySelector('.cover-symbol').style.display = 'none';
   });
@@ -402,10 +595,6 @@ document.getElementById('glass').addEventListener('change', event => {
 document.getElementById('captions').addEventListener('change', event => {
   document.body.classList.toggle('hide-captions', !event.target.checked);
 });
-
-// Initial state
-renderLibrary();
-
 
 // =====================================
 // PlaMus: сохранение настроек
@@ -431,13 +620,13 @@ function saveSettings() {
   }
 }
 
-// IndexedDB для изображений
 function openSettingsDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
 
     request.onupgradeneeded = () => {
       const db = request.result;
+
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
@@ -454,7 +643,9 @@ async function saveImage(key, file) {
 
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
+
       transaction.objectStore(STORE_NAME).put(file, key);
+
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
@@ -491,7 +682,9 @@ async function deleteImage(key) {
 
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
+
       transaction.objectStore(STORE_NAME).delete(key);
+
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
@@ -502,7 +695,7 @@ async function deleteImage(key) {
   }
 }
 
-// Восстановление обычных настроек
+// Restore settings
 if (['dark', 'purple', 'blue'].includes(settings.background)) {
   document.body.dataset.bg = settings.background;
 
@@ -531,11 +724,12 @@ if (typeof settings.captions === 'boolean') {
 
 if (typeof settings.volume === 'number') {
   const volume = Math.max(0, Math.min(1, settings.volume));
+
   audio.volume = volume;
   document.getElementById('volume').value = volume;
 }
 
-// Сохранение переключателей
+// Save switches
 document.getElementById('glow').addEventListener('change', event => {
   settings.glow = event.target.checked;
   saveSettings();
@@ -556,7 +750,7 @@ document.getElementById('volume').addEventListener('input', event => {
   saveSettings();
 });
 
-// Сохранение выбранного пресета
+// Save background preset
 document.querySelectorAll('.bg-option').forEach(button => {
   button.addEventListener('click', () => {
     settings.background = button.dataset.bg;
@@ -565,7 +759,7 @@ document.querySelectorAll('.bg-option').forEach(button => {
   });
 });
 
-// Сохранение загруженного фона
+// Save custom background
 document.getElementById('background-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -576,7 +770,7 @@ document.getElementById('background-upload')
     saveImage('background', file);
   });
 
-// Сохранение обложки
+// Save cover
 document.getElementById('cover-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -585,7 +779,7 @@ document.getElementById('cover-upload')
     saveImage('cover', file);
   });
 
-// Восстановление пользовательских изображений
+// Restore custom images
 (async function restoreImages() {
   const background = await loadImage('background');
 
@@ -614,83 +808,5 @@ document.getElementById('cover-upload')
   }
 })();
 
-
-// =====================================
-// PlaMus: постоянная музыкальная библиотека
-// =====================================
-
-const AUDIO_DB_NAME = 'plamus-audio-library';
-const AUDIO_STORE = 'tracks';
-
-function openAudioDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(AUDIO_DB_NAME, 1);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-
-      if (!db.objectStoreNames.contains(AUDIO_STORE)) {
-        db.createObjectStore(AUDIO_STORE, {
-          keyPath: 'id',
-          autoIncrement: true
-        });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveAudioFile(file, name, artist) {
-  const db = await openAudioDB();
-
-  await new Promise((resolve, reject) => {
-    const transaction = db.transaction(AUDIO_STORE, 'readwrite');
-
-    transaction.objectStore(AUDIO_STORE).add({
-      name,
-      artist,
-      file
-    });
-
-    transaction.oncomplete = resolve;
-    transaction.onerror = () => reject(transaction.error);
-  });
-
-  db.close();
-}
-
-async function getSavedAudio() {
-  const db = await openAudioDB();
-
-  const result = await new Promise((resolve, reject) => {
-    const transaction = db.transaction(AUDIO_STORE, 'readonly');
-    const request = transaction.objectStore(AUDIO_STORE).getAll();
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  db.close();
-  return result;
-}
-
-const libraryReady = (async () => {
-  try {
-    const savedTracks = await getSavedAudio();
-
-    savedTracks.forEach(saved => {
-      tracks.push({
-        name: saved.name,
-        artist: saved.artist,
-        url: URL.createObjectURL(saved.file),
-        file: saved.file
-      });
-    });
-
-    renderLibrary();
-  } catch (error) {
-    console.error('Не удалось восстановить библиотеку:', error);
-  }
-})();
+// Initial render
+renderLibrary();
