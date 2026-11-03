@@ -601,3 +601,25 @@ body.hide-captions .cover-label {
   background: rgba(255, 100, 120, .2);
   border-color: rgba(255, 100, 120, .4);
 }
+
+.track-item {
+    display: flex;
+    align-items: center;
+}
+
+.track-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.track-play,
+.track-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
