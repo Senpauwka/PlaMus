@@ -9,7 +9,10 @@ let shuffled = false;
 let repeated = false;
 let loadToken = 0;
 
-// Telegram
+// =====================================
+// Telegram Mini App
+// =====================================
+
 const tg = window.Telegram?.WebApp;
 
 if (tg) {
@@ -17,14 +20,56 @@ if (tg) {
   tg.expand();
 
   const user = tg.initDataUnsafe?.user;
+  const profile = document.getElementById('profile');
 
-  if (user) {
-    document.getElementById('profile').textContent =
-      user.username ? '@' + user.username : user.first_name;
+  if (user && profile) {
+    profile.textContent = user.username
+      ? '@' + user.username
+      : user.first_name || 'YOUR SPACE';
+  }
+
+  // Поддержка цветовой темы Telegram
+  function applyTelegramTheme() {
+    const theme = tg.themeParams || {};
+    const root = document.documentElement;
+
+    if (theme.bg_color) {
+      root.style.setProperty('--tg-bg-color', theme.bg_color);
+    }
+
+    if (theme.text_color) {
+      root.style.setProperty('--tg-text-color', theme.text_color);
+    }
+
+    if (theme.hint_color) {
+      root.style.setProperty('--tg-hint-color', theme.hint_color);
+    }
+
+    if (theme.button_color) {
+      root.style.setProperty('--tg-button-color', theme.button_color);
+    }
+
+    if (theme.button_text_color) {
+      root.style.setProperty('--tg-button-text-color', theme.button_text_color);
+    }
+  }
+
+  applyTelegramTheme();
+  tg.onEvent('themeChanged', applyTelegramTheme);
+
+  // Системные цвета Telegram
+  try {
+    tg.setHeaderColor('#0b0b10');
+    tg.setBackgroundColor('#0b0b10');
+  } catch (error) {
+    console.warn('Ошибка настройки Telegram:', error);
   }
 }
 
-// Navigation
+// =====================================
+// Навигация
+// =====================================
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => openPage(tab.dataset.page));
 });
@@ -82,8 +127,15 @@ async function saveAudioFile(file, name, artist) {
         file
       });
 
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      let savedId;
+
+      request.onsuccess = () => {
+        savedId = request.result;
+      };
+
+      transaction.oncomplete = () => resolve(savedId);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   } finally {
     db.close();
@@ -329,7 +381,8 @@ progress.addEventListener('input', () => {
   }
 });
 
-// Next and previous
+// Следующий и предыдущий трек
+
 document.getElementById('next').addEventListener('click', nextTrack);
 
 document.getElementById('prev').addEventListener('click', () => {
@@ -369,7 +422,8 @@ audio.addEventListener('ended', () => {
   }
 });
 
-// Shuffle and repeat
+// Перемешивание и повтор
+
 const shuffleButton = document.getElementById('shuffle');
 const repeatButton = document.getElementById('repeat');
 
@@ -383,12 +437,35 @@ repeatButton.addEventListener('click', () => {
   repeatButton.classList.toggle('active', repeated);
 });
 
-// Volume
+// Громкость
+
 document.getElementById('volume').addEventListener('input', event => {
   audio.volume = Number(event.target.value);
 });
 
 audio.volume = 0.8;
+
+// =====================================
+// SVG-иконки треков
+// =====================================
+
+const PLAY_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M8 5.5L19 12L8 18.5V5.5Z"
+          fill="currentColor"/>
+  </svg>
+`;
+
+const DELETE_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 7H20M10 11V17M14 11V17M6 7L7 20H17L18 7M9 7V4H15V7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </svg>
+`;
 
 // =====================================
 // Library
@@ -403,24 +480,39 @@ function renderLibrary() {
     .map((track, index) => ({ ...track, index }))
     .filter(track => track.name.toLowerCase().includes(query));
 
-  if (!filtered.length) {
-    library.innerHTML = '<div class="empty-state">Треки не найдены.</div>';
-  } else {
-    library.innerHTML = filtered.map(track => `
+  function createTrackItem(track) {
+    return `
       <div class="track-item ${track.index === currentTrack ? 'selected' : ''}"
            data-index="${track.index}">
+
         <div class="track-icon">♫</div>
+
         <div class="track-details">
           <strong>${escapeHTML(track.name)}</strong>
           <span>${escapeHTML(track.artist)}</span>
         </div>
-        <button class="track-play" data-play="${track.index}">▶</button>
+
+        <button class="track-play"
+                data-play="${track.index}"
+                title="Воспроизвести"
+                aria-label="Воспроизвести ${escapeHTML(track.name)}">
+          ${PLAY_ICON}
+        </button>
+
         <button class="track-delete"
                 data-delete="${track.index}"
                 title="Удалить"
-                aria-label="Удалить ${escapeHTML(track.name)}">×</button>
+                aria-label="Удалить ${escapeHTML(track.name)}">
+          ${DELETE_ICON}
+        </button>
       </div>
-    `).join('');
+    `;
+  }
+
+  if (!filtered.length) {
+    library.innerHTML = '<div class="empty-state">Треки не найдены.</div>';
+  } else {
+    library.innerHTML = filtered.map(createTrackItem).join('');
   }
 
   const latest = tracks.slice(-4).reverse();
@@ -432,20 +524,7 @@ function renderLibrary() {
     recent.innerHTML = latest.map(track => {
       const index = tracks.indexOf(track);
 
-      return `
-        <div class="track-item" data-index="${index}">
-          <div class="track-icon">♫</div>
-          <div class="track-details">
-            <strong>${escapeHTML(track.name)}</strong>
-            <span>${escapeHTML(track.artist)}</span>
-          </div>
-          <button class="track-play" data-play="${index}">▶</button>
-          <button class="track-delete"
-                  data-delete="${index}"
-                  title="Удалить"
-                  aria-label="Удалить ${escapeHTML(track.name)}">×</button>
-        </div>
-      `;
+      return createTrackItem({ ...track, index });
     }).join('');
   }
 }
@@ -545,7 +624,10 @@ async function deleteTrack(index) {
   }
 }
 
-// Background presets
+// =====================================
+// Внешний вид: фон
+// =====================================
+
 document.querySelectorAll('.bg-option').forEach(button => {
   button.addEventListener('click', () => {
     document.body.dataset.bg = button.dataset.bg;
@@ -556,7 +638,8 @@ document.querySelectorAll('.bg-option').forEach(button => {
   });
 });
 
-// Custom background
+// Загрузка собственного фона
+
 document.getElementById('background-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -569,7 +652,8 @@ document.getElementById('background-upload')
     document.body.style.backgroundAttachment = 'fixed';
   });
 
-// Custom cover
+// Загрузка обложки
+
 document.getElementById('cover-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -583,7 +667,8 @@ document.getElementById('cover-upload')
     cover.querySelector('.cover-symbol').style.display = 'none';
   });
 
-// Appearance settings
+// Переключатели внешнего вида
+
 document.getElementById('glow').addEventListener('change', event => {
   document.body.classList.toggle('no-glow', !event.target.checked);
 });
@@ -638,8 +723,10 @@ function openSettingsDB() {
 }
 
 async function saveImage(key, file) {
+  let db;
+
   try {
-    const db = await openSettingsDB();
+    db = await openSettingsDB();
 
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -649,36 +736,39 @@ async function saveImage(key, file) {
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
-
-    db.close();
   } catch (error) {
     console.warn('Не удалось сохранить изображение:', error);
+  } finally {
+    if (db) db.close();
   }
 }
 
 async function loadImage(key) {
-  try {
-    const db = await openSettingsDB();
+  let db;
 
-    const result = await new Promise((resolve, reject) => {
+  try {
+    db = await openSettingsDB();
+
+    return await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readonly');
       const request = transaction.objectStore(STORE_NAME).get(key);
 
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-
-    db.close();
-    return result;
   } catch (error) {
     console.warn('Не удалось загрузить изображение:', error);
     return null;
+  } finally {
+    if (db) db.close();
   }
 }
 
 async function deleteImage(key) {
+  let db;
+
   try {
-    const db = await openSettingsDB();
+    db = await openSettingsDB();
 
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -688,14 +778,15 @@ async function deleteImage(key) {
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
-
-    db.close();
   } catch (error) {
     console.warn('Не удалось удалить изображение:', error);
+  } finally {
+    if (db) db.close();
   }
 }
 
-// Restore settings
+// Восстановление настроек
+
 if (['dark', 'purple', 'blue'].includes(settings.background)) {
   document.body.dataset.bg = settings.background;
 
@@ -729,7 +820,8 @@ if (typeof settings.volume === 'number') {
   document.getElementById('volume').value = volume;
 }
 
-// Save switches
+// Сохранение переключателей
+
 document.getElementById('glow').addEventListener('change', event => {
   settings.glow = event.target.checked;
   saveSettings();
@@ -750,7 +842,8 @@ document.getElementById('volume').addEventListener('input', event => {
   saveSettings();
 });
 
-// Save background preset
+// Сохранение фоновых пресетов
+
 document.querySelectorAll('.bg-option').forEach(button => {
   button.addEventListener('click', () => {
     settings.background = button.dataset.bg;
@@ -759,7 +852,8 @@ document.querySelectorAll('.bg-option').forEach(button => {
   });
 });
 
-// Save custom background
+// Сохранение собственного фона
+
 document.getElementById('background-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -770,7 +864,8 @@ document.getElementById('background-upload')
     saveImage('background', file);
   });
 
-// Save cover
+// Сохранение обложки
+
 document.getElementById('cover-upload')
   .addEventListener('change', event => {
     const file = event.target.files[0];
@@ -779,7 +874,8 @@ document.getElementById('cover-upload')
     saveImage('cover', file);
   });
 
-// Restore custom images
+// Восстановление пользовательских изображений
+
 (async function restoreImages() {
   const background = await loadImage('background');
 
@@ -808,5 +904,57 @@ document.getElementById('cover-upload')
   }
 })();
 
-// Initial render
+// =====================================
+// Обновлённые кнопки треков
+// =====================================
+
+const trackButtonStyles = document.createElement('style');
+
+trackButtonStyles.textContent = `
+  .track-play,
+  .track-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    padding: 9px;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: .2s ease;
+  }
+
+  .track-play {
+    color: #b9a2ff;
+    background: rgba(151,113,255,.12);
+  }
+
+  .track-play svg,
+  .track-delete svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .track-play:active {
+    transform: scale(.9);
+    background: rgba(151,113,255,.25);
+  }
+
+  .track-delete {
+    color: #ff8585;
+    background: rgba(255,90,90,.08);
+  }
+
+  .track-delete:active {
+    transform: scale(.9);
+    background: rgba(255,90,90,.2);
+  }
+`;
+
+document.head.appendChild(trackButtonStyles);
+
+// Начальное отображение
+
 renderLibrary();
