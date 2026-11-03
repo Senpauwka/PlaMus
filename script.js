@@ -911,15 +911,28 @@ document.getElementById('cover-upload')
 const trackButtonStyles = document.createElement('style');
 
 trackButtonStyles.textContent = `
+  .track-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .track-details {
+    flex: 1;
+    min-width: 0;
+  }
+
   .track-play,
   .track-delete {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    flex: 0 0 38px;
     width: 38px;
     height: 38px;
     padding: 9px;
+    margin: 0;
     border: 1px solid rgba(255,255,255,.08);
     border-radius: 12px;
     cursor: pointer;
@@ -931,25 +944,20 @@ trackButtonStyles.textContent = `
     background: rgba(151,113,255,.12);
   }
 
+  .track-delete {
+    color: #ff8585;
+    background: rgba(255,90,90,.08);
+  }
+
   .track-play svg,
   .track-delete svg {
     width: 100%;
     height: 100%;
   }
 
-  .track-play:active {
-    transform: scale(.9);
-    background: rgba(151,113,255,.25);
-  }
-
-  .track-delete {
-    color: #ff8585;
-    background: rgba(255,90,90,.08);
-  }
-
+  .track-play:active,
   .track-delete:active {
     transform: scale(.9);
-    background: rgba(255,90,90,.2);
   }
 `;
 
