@@ -966,3 +966,618 @@ document.head.appendChild(trackButtonStyles);
 // Начальное отображение
 
 renderLibrary();
+
+
+
+// =============================================
+// PlaMus — USER PROFILE & LISTENING STATISTICS
+// =============================================
+
+(function initPlaMusProfile() {
+  const profileButton = document.getElementById('profile');
+
+  if (!profileButton) {
+    console.warn('PlaMus: элемент профиля не найден.');
+    return;
+  }
+
+  const STATS_KEY = 'plamus-listening-stats-v1';
+
+  // ---------------------------------------------
+  // Хранилище статистики
+  // ---------------------------------------------
+
+  function readStats() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STATS_KEY) || '{}');
+
+      return {
+        totalPlays: Number(saved.totalPlays) || 0,
+        totalSeconds: Number(saved.totalSeconds) || 0,
+        tracks: saved.tracks && typeof saved.tracks === 'object'
+          ? saved.tracks
+          : {}
+      };
+    } catch (error) {
+      return {
+        totalPlays: 0,
+        totalSeconds: 0,
+        tracks: {}
+      };
+    }
+  }
+
+  const stats = readStats();
+
+  function saveStats() {
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    } catch (error) {
+      console.warn('PlaMus: ошибка сохранения статистики', error);
+    }
+  }
+
+  function getTrackKey(track) {
+    if (!track) return null;
+
+    return track.id != null
+      ? 'id:' + track.id
+      : 'file:' + track.name + '::' + track.artist;
+  }
+
+  function formatListeningTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return hours + ' ч ' + (minutes % 60) + ' мин';
+    }
+
+    return minutes + ' мин';
+  }
+
+  function safeText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    })[char]);
+  }
+
+  // ---------------------------------------------
+  // Информация Telegram
+  // ---------------------------------------------
+
+  const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+
+  const username = telegramUser?.username
+    ? '@' + telegramUser.username
+    : 'Пользователь PlaMus';
+
+  const fullName = telegramUser
+    ? [telegramUser.first_name, telegramUser.last_name]
+        .filter(Boolean).join(' ')
+    : 'Твой музыкальный профиль';
+
+  const avatar = telegramUser?.photo_url || '';
+
+  // ---------------------------------------------
+  // Создание интерфейса профиля
+  // ---------------------------------------------
+
+  const profileStyle = document.createElement('style');
+
+  profileStyle.textContent = `
+    #profile {
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #plamus-profile-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99990;
+      display: flex;
+      justify-content: flex-end;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(9px);
+      -webkit-backdrop-filter: blur(9px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .3s ease, visibility .3s ease;
+    }
+
+    #plamus-profile-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #plamus-profile-panel {
+      width: min(100%, 480px);
+      height: 100%;
+      height: 100dvh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: max(28px, env(safe-area-inset-top)) 24px
+        max(30px, env(safe-area-inset-bottom));
+      box-sizing: border-box;
+      color: #f5f2ff;
+      background:
+        radial-gradient(ellipse at 90% 0%, rgba(139,101,255,.22), transparent 45%),
+        #111018;
+      border-left: 1px solid rgba(255,255,255,.1);
+      transform: translateX(100%);
+      transition: transform .35s cubic-bezier(.2,.8,.2,1);
+    }
+
+    #plamus-profile-overlay.open #plamus-profile-panel {
+      transform: translateX(0);
+    }
+
+    .pl-profile-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 38px;
+    }
+
+    .pl-profile-heading {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: #b69aff;
+    }
+
+    .pl-profile-close {
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 14px;
+      color: white;
+      background: rgba(255,255,255,.06);
+      font-size: 25px;
+      cursor: pointer;
+    }
+
+    .pl-profile-user {
+      text-align: center;
+      padding: 12px 0 30px;
+    }
+
+    .pl-profile-avatar {
+      width: 94px;
+      height: 94px;
+      margin: 0 auto 18px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      border: 2px solid rgba(182,154,255,.7);
+      background: linear-gradient(135deg,#7551c9,#241c39);
+      color: white;
+      font-size: 34px;
+      font-weight: 800;
+      box-shadow: 0 0 35px rgba(151,113,255,.2);
+    }
+
+    .pl-profile-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .pl-profile-name {
+      font-size: 25px;
+      font-weight: 800;
+      margin-bottom: 7px;
+      overflow-wrap: anywhere;
+    }
+
+    .pl-profile-username {
+      color: #ad9acb;
+      font-size: 14px;
+    }
+
+    .pl-profile-section-title {
+      margin: 28px 0 15px;
+      color: #b69aff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 2.5px;
+    }
+
+    .pl-profile-stats {
+      display: grid;
+      grid-template-columns: repeat(2,minmax(0,1fr));
+      gap: 11px;
+    }
+
+    .pl-profile-stat {
+      min-width: 0;
+      padding: 18px 15px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 19px;
+      background: rgba(255,255,255,.045);
+    }
+
+    .pl-profile-stat-label {
+      display: block;
+      color: #9b96a8;
+      font-size: 11px;
+      margin-bottom: 12px;
+    }
+
+    .pl-profile-stat-value {
+      display: block;
+      color: #c1a6ff;
+      font-size: 25px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .pl-profile-top {
+      display: grid;
+      gap: 10px;
+    }
+
+    .pl-profile-track {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 13px;
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 15px;
+      background: rgba(255,255,255,.035);
+    }
+
+    .pl-profile-rank {
+      width: 31px;
+      height: 31px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 31px;
+      border-radius: 10px;
+      color: #c1a6ff;
+      background: rgba(151,113,255,.14);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .pl-profile-track-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pl-profile-track-info strong,
+    .pl-profile-track-info span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pl-profile-track-info strong {
+      font-size: 13px;
+    }
+
+    .pl-profile-track-info span {
+      color: #9690a2;
+      font-size: 11px;
+      margin-top: 5px;
+    }
+
+    .pl-profile-track-plays {
+      color: #b69aff;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .pl-profile-empty {
+      padding: 22px 15px;
+      text-align: center;
+      color: #9992a7;
+      border: 1px dashed rgba(255,255,255,.12);
+      border-radius: 15px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .pl-profile-footer {
+      margin-top: 35px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      color: #777181;
+      font-size: 11px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    @media (min-width: 700px) {
+      #plamus-profile-panel {
+        border-radius: 25px 0 0 25px;
+      }
+    }
+  `;
+
+  document.head.appendChild(profileStyle);
+
+  const overlay = document.createElement('div');
+  overlay.id = 'plamus-profile-overlay';
+
+  overlay.innerHTML = `
+    <div id="plamus-profile-panel" role="dialog"
+         aria-modal="true" aria-label="Профиль PlaMus">
+
+      <div class="pl-profile-header">
+        <span class="pl-profile-heading">YOUR SPACE</span>
+        <button class="pl-profile-close"
+                id="pl-profile-close"
+                aria-label="Закрыть профиль">×</button>
+      </div>
+
+      <div class="pl-profile-user">
+        <div class="pl-profile-avatar" id="pl-profile-avatar">
+          ${safeText((fullName[0] || 'P').toUpperCase())}
+        </div>
+
+        <div class="pl-profile-name" id="pl-profile-name">
+          ${safeText(fullName)}
+        </div>
+
+        <div class="pl-profile-username">
+          ${safeText(username)}
+        </div>
+      </div>
+
+      <div class="pl-profile-section-title">
+        LISTENING STATISTICS
+      </div>
+
+      <div class="pl-profile-stats">
+        <div class="pl-profile-stat">
+          <span class="pl-profile-stat-label">Прослушивания</span>
+          <strong class="pl-profile-stat-value" id="pl-stat-plays">0</strong>
+        </div>
+
+        <div class="pl-profile-stat">
+          <span class="pl-profile-stat-label">Время прослушивания</span>
+          <strong class="pl-profile-stat-value" id="pl-stat-time">0 мин</strong>
+        </div>
+
+        <div class="pl-profile-stat">
+          <span class="pl-profile-stat-label">Треков в медиатеке</span>
+          <strong class="pl-profile-stat-value" id="pl-stat-library">0</strong>
+        </div>
+
+        <div class="pl-profile-stat">
+          <span class="pl-profile-stat-label">Разных треков слушал</span>
+          <strong class="pl-profile-stat-value" id="pl-stat-unique">0</strong>
+        </div>
+      </div>
+
+      <div class="pl-profile-section-title">
+        YOUR TOP TRACKS
+      </div>
+
+      <div class="pl-profile-top" id="pl-profile-top">
+        <div class="pl-profile-empty">
+          Здесь пока пусто.<br>
+          Включи музыку — и твой топ начнёт формироваться.
+        </div>
+      </div>
+
+      <div class="pl-profile-footer">
+        PlaMus · Your personal music space<br>
+        Статистика хранится на этом устройстве.
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Аватар Telegram
+  if (avatar) {
+    const avatarBox = document.getElementById('pl-profile-avatar');
+    const avatarImage = document.createElement('img');
+
+    avatarImage.src = avatar;
+    avatarImage.alt = 'Аватар';
+
+    avatarBox.replaceChildren(avatarImage);
+  }
+
+  // ---------------------------------------------
+  // Открытие и закрытие панели
+  // ---------------------------------------------
+
+  function openProfile() {
+    renderProfile();
+
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    if (window.Telegram?.WebApp?.BackButton) {
+      window.Telegram.WebApp.BackButton.show();
+      window.Telegram.WebApp.BackButton.onClick(closeProfile);
+    }
+  }
+
+  function closeProfile() {
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+
+    if (window.Telegram?.WebApp?.BackButton) {
+      window.Telegram.WebApp.BackButton.hide();
+      window.Telegram.WebApp.BackButton.offClick(closeProfile);
+    }
+  }
+
+  profileButton.setAttribute('role', 'button');
+  profileButton.setAttribute('tabindex', '0');
+  profileButton.setAttribute('aria-label', 'Открыть профиль');
+
+  profileButton.addEventListener('click', openProfile);
+
+  profileButton.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openProfile();
+    }
+  });
+
+  document.getElementById('pl-profile-close')
+    .addEventListener('click', closeProfile);
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeProfile();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && overlay.classList.contains('open')) {
+      closeProfile();
+    }
+  });
+
+  // ---------------------------------------------
+  // Отображение статистики
+  // ---------------------------------------------
+
+  function renderProfile() {
+    document.getElementById('pl-stat-plays').textContent =
+      stats.totalPlays;
+
+    document.getElementById('pl-stat-time').textContent =
+      formatListeningTime(stats.totalSeconds);
+
+    document.getElementById('pl-stat-library').textContent =
+      tracks.length;
+
+    const uniqueTracks = Object.values(stats.tracks)
+      .filter(track => track.plays > 0).length;
+
+    document.getElementById('pl-stat-unique').textContent =
+      uniqueTracks;
+
+    const top = Object.values(stats.tracks)
+      .filter(track => track.plays > 0)
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 5);
+
+    const topContainer = document.getElementById('pl-profile-top');
+
+    if (!top.length) {
+      topContainer.innerHTML = `
+        <div class="pl-profile-empty">
+          Здесь пока пусто.<br>
+          Включи музыку — и твой топ начнёт формироваться.
+        </div>
+      `;
+      return;
+    }
+
+    topContainer.innerHTML = top.map((track, index) => `
+      <div class="pl-profile-track">
+        <div class="pl-profile-rank">${index + 1}</div>
+
+        <div class="pl-profile-track-info">
+          <strong>${safeText(track.name)}</strong>
+          <span>${safeText(track.artist)} ·
+            ${formatListeningTime(track.seconds || 0)}
+          </span>
+        </div>
+
+        <span class="pl-profile-track-plays">
+          ${track.plays} раз
+        </span>
+      </div>
+    `).join('');
+  }
+
+  // ---------------------------------------------
+  // Учёт воспроизведений
+  // ---------------------------------------------
+
+  let activeStatsTrack = null;
+  let lastAudioTime = null;
+
+  audio.addEventListener('play', () => {
+    const track = tracks[currentTrack];
+    if (!track) return;
+
+    const key = getTrackKey(track);
+
+    if (activeStatsTrack !== key) {
+      activeStatsTrack = key;
+
+      if (!stats.tracks[key]) {
+        stats.tracks[key] = {
+          name: track.name,
+          artist: track.artist,
+          plays: 0,
+          seconds: 0
+        };
+      }
+
+      stats.tracks[key].name = track.name;
+      stats.tracks[key].artist = track.artist;
+      stats.tracks[key].plays++;
+
+      stats.totalPlays++;
+
+      saveStats();
+    }
+
+    lastAudioTime = audio.currentTime;
+    renderProfile();
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    if (audio.paused || !activeStatsTrack) return;
+
+    const currentTime = audio.currentTime;
+
+    if (lastAudioTime !== null) {
+      const elapsed = currentTime - lastAudioTime;
+
+      // Не считаем перемотку и большие скачки времени.
+      if (elapsed > 0 && elapsed <= 5) {
+        stats.totalSeconds += elapsed;
+
+        const trackStats = stats.tracks[activeStatsTrack];
+
+        if (trackStats) {
+          trackStats.seconds += elapsed;
+        }
+
+        saveStats();
+      }
+    }
+
+    lastAudioTime = currentTime;
+  });
+
+  audio.addEventListener('seeking', () => {
+    lastAudioTime = null;
+  });
+
+  audio.addEventListener('seeked', () => {
+    lastAudioTime = audio.currentTime;
+  });
+
+  audio.addEventListener('pause', () => {
+    lastAudioTime = null;
+  });
+
+  audio.addEventListener('ended', () => {
+    lastAudioTime = null;
+    activeStatsTrack = null;
+  });
+
+  // Обновление количества треков при открытии профиля.
+  renderProfile();
+
+  console.log('PlaMus: профиль успешно подключён.');
+})();
